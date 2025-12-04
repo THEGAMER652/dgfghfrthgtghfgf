@@ -5,14 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Global Real-Time Chat and Video Call</title>
     
-    <!-- Import Firebase SDK v8 (Realtime Database & App) via CDN -->
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
-
+    <!-- Using custom CSS for aesthetics, replacing Tailwind for this game-like UI -->
     <style>
         /* Base styling */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
         body {
-            font-family: 'Inter', Arial, sans-serif;
+            font-family: 'Inter', sans-serif;
             background-color: #F7FFDC;
             display: flex;
             justify-content: center;
@@ -50,6 +48,7 @@
             border-radius: 8px;
             cursor: pointer;
             font-weight: bold;
+            transition: background-color 0.2s;
         }
         .mode-selector .active {
             background-color: #66BB6A;
@@ -116,6 +115,10 @@
             border-radius: 8px;
             cursor: pointer;
             font-weight: bold;
+            transition: background-color 0.2s;
+        }
+        .input-group button:hover:not(:disabled) {
+            background-color: #4CAF50;
         }
         
         /* --- Video Mode Styles --- */
@@ -141,25 +144,34 @@
             aspect-ratio: 4 / 3;
             background-color: #111;
         }
+        .video-controls {
+            display: flex;
+            gap: 10px;
+        }
         .video-controls button {
-            width: 100%;
+            flex: 1;
             padding: 12px;
-            margin-top: 5px;
             background-color: #D32F2F;
             color: white;
             border: none;
             border-radius: 8px;
             cursor: pointer;
             font-weight: bold;
+            transition: background-color 0.2s;
+        }
+        .video-controls button:hover:not(:disabled) {
+            background-color: #C62828;
         }
         .video-controls #startCallButton {
              background-color: #1976D2;
         }
-        .video-controls #startCallButton:disabled {
-             background-color: #90CAF9;
-             cursor: not-allowed;
+        .video-controls #startCallButton:hover:not(:disabled) {
+            background-color: #1565C0;
         }
-
+        .video-controls button:disabled {
+            background-color: #90CAF9;
+            cursor: not-allowed;
+        }
     </style>
 </head>
 <body>
@@ -167,15 +179,15 @@
     <div class="main-container">
         <div class="header">
             <h2>📢 Global Communications</h2>
-            <p id="statusMessage">Connecting to database...</p>
+            <p id="statusMessage">Initializing Application...</p>
         </div>
 
         <div class="mode-selector">
-             <button id="chatModeButton" class="active">Text Chat</button>
-             <button id="videoModeButton">Video/Audio Call</button>
+            <button id="chatModeButton" class="active">Text Chat</button>
+            <button id="videoModeButton">Video/Audio Call</button>
         </div>
 
-        <!-- --- TEXT CHAT INTERFACE --- -->
+        <!-- --- TEXT CHAT INTERFACE (Mode 1) --- -->
         <div id="chat-mode">
             <div class="chat-area" id="chatArea">
                 <!-- Chat messages will appear here -->
@@ -186,7 +198,7 @@
             </div>
         </div>
 
-        <!-- --- VIDEO CALL INTERFACE --- -->
+        <!-- --- VIDEO CALL INTERFACE (Mode 2) --- -->
         <div id="video-mode">
             <div class="video-grid">
                 <div class="video-container">
@@ -200,147 +212,28 @@
                 <button id="startCallButton">Start Video Call</button>
                 <button id="hangUpButton" disabled>Hang Up</button>
             </div>
-            <p id="videoStatus" style="text-align: center; font-style: italic; color: #555;">Ready for call.</p>
+            <p id="videoStatus" style="text-align: center; font-style: italic; color: #555;">Initializing WebRTC...</p>
         </div>
 
     </div>
 
-    <script>
-        // --- CONFIGURATION ---
-        const firebaseConfig = {
-          apiKey: "AIzaSyBxaoBS9ckZ99mJWG1Y3gT5Aa5uwzSUQZI",
-          authDomain: "fakeomege.firebaseapp.com",
-          projectId: "fakeomege",
-          storageBucket: "fakeomege.firebasestorage.app",
-          messagingSenderId: "931074805838",
-          appId: "1:931074805838:web:280a80c0a2f5e175a5f31f"
-        };
+    <!-- Firebase Imports and Logic -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, addDoc, setDoc, onSnapshot, collection, query, where, orderBy, serverTimestamp, setLogLevel, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- GLOBAL STATE & DOM REFERENCES ---
+        let db;
+        let auth;
+        let userId = 'unknown';
+        let isAuthReady = false;
         
-        // --- FIREBASE SETUP ---
-        let database, chatRef, callRef;
-        let currentUserId;
+        // DOM Elements
+        let chatArea, chatInput, sendButton, localVideo, remoteVideo, startCallButton, hangUpButton, videoStatus, statusMessage;
+        let chatModeDiv, videoModeDiv, chatModeButton, videoModeButton;
 
-        // Initialize Firebase
-        try {
-            firebase.initializeApp(firebaseConfig);
-            database = firebase.database();
-            
-            // Text Chat path
-            chatRef = database.ref('globalChat/messages'); 
-            
-            // Video Call Signaling path (Simplified: Global room for two users)
-            // NOTE: We are intentionally using a simple global path for demonstration.
-            callRef = database.ref('callRoom/global'); 
-
-            // User ID setup
-            const generateUserId = () => 'User_' + Math.random().toString(36).substr(2, 4).toUpperCase();
-            currentUserId = localStorage.getItem('chatUserId') || generateUserId();
-            localStorage.setItem('chatUserId', currentUserId);
-            
-            document.getElementById('statusMessage').textContent = `Connected as: ${currentUserId}`;
-
-            // --- DOM ELEMENTS ---
-            // MOVED THIS SECTION UP TO ENSURE ELEMENTS ARE FOUND BEFORE FUNCTIONS ARE CALLED
-            const chatArea = document.getElementById('chatArea');
-            const chatInput = document.getElementById('chatInput');
-            const sendButton = document.getElementById('sendButton');
-            const localVideo = document.getElementById('localVideo');
-            const remoteVideo = document.getElementById('remoteVideo');
-            const startCallButton = document.getElementById('startCallButton');
-            const hangUpButton = document.getElementById('hangUpButton');
-            const videoStatus = document.getElementById('videoStatus');
-            const chatModeDiv = document.getElementById('chat-mode');
-            const videoModeDiv = document.getElementById('video-mode');
-            const chatModeButton = document.getElementById('chatModeButton');
-            const videoModeButton = document.getElementById('videoModeButton');
-            
-            // Now safe to call the listener function
-            initChatListeners(chatArea, chatInput, sendButton); 
-
-        } catch (error) {
-            console.error("Firebase Initialization Error:", error);
-            // Changed the status message to be more accurate if the error is due to Firebase SDK/network.
-            document.getElementById('statusMessage').textContent = 'ERROR: Initialization failed. Check console or Firebase rules.';
-        }
-        
-        // To fix the TDZ error, we must now declare the functions AFTER the elements are retrieved, 
-        // or pass the elements as arguments. Passing arguments makes the functions cleaner.
-        
-        // --- CHAT FUNCTIONS ---
-
-        // Updated function signature to accept elements, although we will stick to global for simplicity
-        // in this single file architecture, but we rely on the elements being initialized above.
-        function addMessage(user, msg, className) {
-            // Check if chatArea was successfully found (it should be, now that the code order is fixed)
-            const chatArea = document.getElementById('chatArea');
-            if (!chatArea) return; 
-
-            const msgBox = document.createElement('div');
-            
-            const isSelf = user === currentUserId;
-            msgBox.className = 'message-box ' + className;
-            if (isSelf) {
-                 msgBox.className = 'message-box self';
-            }
-
-            const senderSpan = document.createElement('span');
-            senderSpan.className = className;
-            senderSpan.textContent = user + ': ';
-
-            msgBox.appendChild(senderSpan);
-            msgBox.appendChild(document.createTextNode(msg));
-
-            chatArea.appendChild(msgBox);
-            // Scroll to bottom
-            chatArea.scrollTop = chatArea.scrollHeight;
-        }
-
-        function sendMessage() {
-             const chatInput = document.getElementById('chatInput');
-             if (!chatInput) return;
-
-            const message = chatInput.value.trim();
-            if (message) {
-                // Send object to Firebase Realtime Database
-                chatRef.push({
-                    user: currentUserId,
-                    msg: message,
-                    timestamp: firebase.database.ServerValue.TIMESTAMP
-                });
-                
-                chatInput.value = ''; 
-                chatInput.focus();
-            }
-        }
-        
-        // We removed element parameters here and rely on the global scope now that we fixed the execution order.
-        function initChatListeners() {
-             const sendButton = document.getElementById('sendButton');
-             const chatInput = document.getElementById('chatInput');
-             
-            chatRef.limitToLast(50).on('child_added', (snapshot) => {
-                const data = snapshot.val();
-                let msgClass = (data.user === 'System') ? 'system' : 'user';
-                addMessage(data.user, data.msg, msgClass);
-            });
-            
-            // System Message on Start
-            addMessage('System', `Welcome, ${currentUserId}! Start chatting or join a video call.`, 'system');
-
-            // Chat Event Listeners
-            if(sendButton) sendButton.addEventListener('click', sendMessage);
-            if(chatInput) {
-                chatInput.addEventListener('keypress', (e) => {
-                    if (e.key === 'Enter') {
-                        sendMessage();
-                    }
-                });
-            }
-        }
-
-
-        // --- WEBRTC / VIDEO CALL FUNCTIONS ---
-        
+        // WebRTC Globals
         let pc; // PeerConnection
         let localStream;
         const configuration = {
@@ -348,12 +241,104 @@
                 { urls: 'stun:stun.l.google.com:19302' },
             ]
         };
+
+        // Paths using the mandatory global __app_id
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const CHAT_COLLECTION_PATH = `/artifacts/${appId}/public/data/messages`;
         
-        // 1. Get local camera and microphone
+        // The single document used for call Offer/Answer signaling. All users listen to this.
+        const CALL_DOC_PATH = `/artifacts/${appId}/public/data/calls/global`; 
+        
+        // Subcollection for exchanging ICE candidates.
+        const CANDIDATES_COLLECTION_PATH = `${CALL_DOC_PATH}/candidates`; 
+
+        // --- CHAT FUNCTIONS ---
+
+        function addMessage(user, msg, msgTimestamp) {
+            if (!chatArea) return;
+
+            const isSelf = user === userId;
+            // Use a substring of the userId for display, as requested by the instructions
+            const userName = isSelf ? 'You' : `User (${user})`; 
+            const msgBox = document.createElement('div');
+            
+            let msgClass = 'user';
+            if (user === 'System') msgClass = 'system';
+            else if (isSelf) msgClass = 'self';
+
+            msgBox.className = 'message-box ' + msgClass;
+            
+            const senderSpan = document.createElement('span');
+            senderSpan.textContent = userName + ': ';
+
+            const timestamp = msgTimestamp?.toDate ? msgTimestamp.toDate() : new Date();
+            const timeText = timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+            msgBox.appendChild(senderSpan);
+            msgBox.appendChild(document.createTextNode(msg));
+            
+            const timeElement = document.createElement('small');
+            timeElement.textContent = ' ' + timeText;
+            timeElement.style.opacity = 0.6;
+            msgBox.appendChild(timeElement);
+
+            chatArea.appendChild(msgBox);
+            // Scroll to bottom
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }
+
+        async function sendMessage() {
+            if (!chatInput || !chatInput.value.trim() || !userId) return;
+
+            const message = chatInput.value.trim();
+            chatInput.value = '';
+            sendButton.disabled = true;
+
+            try {
+                await addDoc(collection(db, CHAT_COLLECTION_PATH), {
+                    user: userId,
+                    msg: message,
+                    timestamp: serverTimestamp()
+                });
+            } catch (e) {
+                console.error("Error sending message:", e);
+            } finally {
+                sendButton.disabled = false;
+            }
+        }
+        
+        function initChatListeners() {
+            if (!db || !isAuthReady) return;
+
+            // Query the chat collection. Note: sorting is done in memory to avoid Firestore index requirements.
+            const q = query(collection(db, CHAT_COLLECTION_PATH) /* No ordering to avoid indexing errors */); 
+            
+            onSnapshot(q, (snapshot) => {
+                snapshot.docChanges().forEach((change) => {
+                    if (change.type === "added") {
+                        const data = change.doc.data();
+                        addMessage(data.user, data.msg, data.timestamp);
+                    }
+                });
+            }, (error) => {
+                console.error("Error listening to chat messages:", error);
+            });
+            
+            // Chat Event Listeners
+            sendButton.addEventListener('click', sendMessage);
+            chatInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+            sendButton.disabled = false;
+            addMessage('System', `Welcome, ${userId}! Start chatting or join a video call.`, new Date());
+        }
+
+
+        // --- WEBRTC / VIDEO CALL FUNCTIONS ---
+        
         async function startLocalStream() {
-            const localVideo = document.getElementById('localVideo');
-            const videoStatus = document.getElementById('videoStatus');
-            const startCallButton = document.getElementById('startCallButton');
             if (!localVideo || !videoStatus || !startCallButton) return false;
 
             try {
@@ -363,176 +348,206 @@
                 startCallButton.disabled = false;
                 return true;
             } catch (error) {
-                videoStatus.textContent = `ERROR: Could not access media devices. (${error.name})`;
+                videoStatus.textContent = `ERROR: Could not access media devices. (${error.name}). Try refreshing or check permissions.`;
                 console.error("Error accessing media devices:", error);
                 startCallButton.disabled = true;
                 return false;
             }
         }
         
-        // 2. Initialize PeerConnection
         function initializePeerConnection() {
-            const remoteVideo = document.getElementById('remoteVideo');
-
+            if (!remoteVideo || !localStream) return;
             pc = new RTCPeerConnection(configuration);
 
             localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
             pc.ontrack = (event) => {
-                if (remoteVideo) remoteVideo.srcObject = event.streams[0];
+                remoteVideo.srcObject = event.streams[0];
             };
 
-            // Gather ICE candidates and send them to the other peer via Firebase
+            // Gather ICE candidates and send them to the other peer via Firestore
             pc.onicecandidate = (event) => {
                 if (event.candidate) {
-                    callRef.child('iceCandidates').push({
-                        sender: currentUserId,
+                    addDoc(collection(db, CANDIDATES_COLLECTION_PATH), {
+                        sender: userId,
                         candidate: event.candidate.toJSON()
-                    });
+                    }).catch(e => console.error("Error sending ICE candidate:", e));
                 }
             };
         }
         
-        // 3. Create Offer (Initiator)
         async function createOffer() {
-            const videoStatus = document.getElementById('videoStatus');
-            const startCallButton = document.getElementById('startCallButton');
-            const hangUpButton = document.getElementById('hangUpButton');
-
             if (!localStream) {
-                // User may have been in video mode before camera was ready
+                // Try to start local media first
                 if (!await startLocalStream()) return;
+            }
+            if (pc) {
+                // If PC exists, user might be trying to re-call. Hang up first to clean state.
+                hangUp(); 
             }
             initializePeerConnection();
             
-            if (videoStatus) videoStatus.textContent = "Creating call offer...";
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
+            videoStatus.textContent = "Creating call offer...";
+            try {
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
 
-            // Send offer to Firebase
-            await callRef.child('offer').set({
-                sender: currentUserId,
-                sdp: offer.sdp,
-                type: offer.type
-            });
-            
-            if(startCallButton) startCallButton.disabled = true;
-            if(hangUpButton) hangUpButton.disabled = false;
-            if (videoStatus) videoStatus.textContent = "Offer sent. Waiting for answer...";
+                // Send offer to Firestore signaling document
+                await setDoc(doc(db, CALL_DOC_PATH), {
+                    sender: userId,
+                    sdp: offer.sdp,
+                    type: offer.type,
+                    status: 'offered',
+                    timestamp: serverTimestamp()
+                });
+                
+                startCallButton.disabled = true;
+                hangUpButton.disabled = false;
+                videoStatus.textContent = "Offer sent. Waiting for answer...";
+
+            } catch (e) {
+                console.error("Error creating offer:", e);
+                videoStatus.textContent = "Error creating call offer.";
+                hangUp();
+            }
         }
 
-        // 4. Handle Offer (Receiver)
         async function handleOffer(offerData) {
-            const videoStatus = document.getElementById('videoStatus');
-            const startCallButton = document.getElementById('startCallButton');
-            const hangUpButton = document.getElementById('hangUpButton');
+            // Do not process your own offer
+            if (offerData.sender === userId) return;
             
+            // Ensure media access is granted for the receiver
             if (!localStream) {
-                 await startLocalStream();
+                await startLocalStream();
             }
+            
+            // Initialize PC if it doesn't exist (i.e., this user is the receiver)
             if (!pc) {
                 initializePeerConnection();
             }
-
-            if (videoStatus) videoStatus.textContent = `Incoming call from ${offerData.sender}. Answering...`;
+            
+            if (videoStatus) videoStatus.textContent = `Incoming call from ${offerData.sender.substring(0, 8)}... Answering...`;
             
             try {
+                // Set the remote description (the offer)
                 await pc.setRemoteDescription(new RTCSessionDescription(offerData));
                 
+                // Create the answer
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
 
-                // Send answer back via Firebase
-                await callRef.child('answer').set({
-                    sender: currentUserId,
+                // Send answer back via Firestore (overwriting the doc)
+                await setDoc(doc(db, CALL_DOC_PATH), {
+                    sender: userId,
                     sdp: answer.sdp,
-                    type: answer.type
+                    type: answer.type,
+                    status: 'answered',
+                    timestamp: serverTimestamp()
                 });
                 
-                if(startCallButton) startCallButton.disabled = true;
-                if(hangUpButton) hangUpButton.disabled = false;
-                if (videoStatus) videoStatus.textContent = "Answer sent. Connecting...";
+                startCallButton.disabled = true;
+                hangUpButton.disabled = false;
+                videoStatus.textContent = "Answer sent. Connecting...";
 
             } catch (e) {
                 console.error("Error handling offer:", e);
-                if (videoStatus) videoStatus.textContent = "Error processing call offer.";
+                videoStatus.textContent = "Error processing call offer. Call cancelled.";
+                hangUp();
             }
         }
         
-        // 5. Handle Answer (Initiator)
         async function handleAnswer(answerData) {
-            const videoStatus = document.getElementById('videoStatus');
+            // Only the offerer should process the answer
+            if (answerData.sender === userId || !pc || pc.localDescription.type !== 'offer') return;
 
-            if (!pc) return; // Should not happen if offer was successful
-            if (videoStatus) videoStatus.textContent = "Received answer. Finalizing connection...";
+            videoStatus.textContent = "Received answer. Finalizing connection...";
             try {
                 await pc.setRemoteDescription(new RTCSessionDescription(answerData));
-                if (videoStatus) videoStatus.textContent = "Call connected!";
+                videoStatus.textContent = "Call connected! 🎉";
             } catch (e) {
                 console.error("Error handling answer:", e);
-                if (videoStatus) videoStatus.textContent = "Error connecting call.";
+                videoStatus.textContent = "Error connecting call.";
             }
         }
-
-        // 6. Firebase Signaling Listener
+        
         function initVideoListeners() {
-            const startCallButton = document.getElementById('startCallButton');
-            const hangUpButton = document.getElementById('hangUpButton');
-            
-            // Listen for Offers
-            callRef.child('offer').on('value', (snapshot) => {
-                const data = snapshot.val();
-                // Check if data exists, sender is not self, AND we haven't started a PC yet (meaning we are the receiver)
-                if (data && data.sender !== currentUserId && !pc) {
-                    handleOffer(data);
-                }
-            });
+            if (!db || !isAuthReady) return;
 
-            // Listen for Answers
-            callRef.child('answer').on('value', (snapshot) => {
-                const data = snapshot.val();
-                // Check if data exists, sender is not self, AND we are the initiator (pc exists and localDescription is 'offer')
-                if (data && data.sender !== currentUserId && pc && pc.localDescription && pc.localDescription.type === 'offer') {
+            // 1. Listen for Offer/Answer signaling state changes on the global call document
+            onSnapshot(doc(db, CALL_DOC_PATH), (docSnapshot) => {
+                if (!docSnapshot.exists()) return;
+                const data = docSnapshot.data();
+                
+                // Handle call hung up by any user
+                if (data.status === 'hung_up' && data.sender !== userId && pc) {
+                    console.log("Remote party hung up.");
+                    hangUp();
+                    return;
+                }
+                
+                if (!data || data.sender === userId) return; // Ignore self-generated updates
+
+                if (data.type === 'offer' && data.status === 'offered') {
+                    // This user is the receiver
+                    handleOffer(data);
+                } else if (data.type === 'answer' && data.status === 'answered' && pc && pc.localDescription && pc.localDescription.type === 'offer') {
+                    // This user is the initiator and receives the answer
                     handleAnswer(data);
                 }
+            }, (error) => {
+                console.error("Error listening to call signaling:", error);
+            });
+
+            // 2. Listen for ICE Candidates exchanged via the subcollection
+            const q = query(collection(db, CANDIDATES_COLLECTION_PATH));
+            onSnapshot(q, (snapshot) => {
+                snapshot.docChanges().forEach((change) => {
+                    if (change.type === "added") {
+                        const data = change.doc.data();
+                        // Only process candidates from the remote peer if PC is active
+                        if (data.sender !== userId && pc && pc.remoteDescription) {
+                            try {
+                                pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+                            } catch (e) {
+                                console.error("Error adding ICE candidate:", e);
+                            }
+                        }
+                    }
+                });
+            }, (error) => {
+                console.error("Error listening to ICE candidates:", error);
             });
             
-            // Listen for ICE Candidates
-            callRef.child('iceCandidates').on('child_added', (snapshot) => {
-                const data = snapshot.val();
-                // Check if data exists, sender is not self, AND PC/remoteDescription are ready
-                if (data && data.sender !== currentUserId && pc && pc.remoteDescription) {
-                    pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-                }
-            });
-            
-            // Call control buttons
-            if(startCallButton) startCallButton.addEventListener('click', createOffer);
-            if(hangUpButton) hangUpButton.addEventListener('click', hangUp);
+            // UI Event Listeners
+            startCallButton.addEventListener('click', createOffer);
+            hangUpButton.addEventListener('click', hangUp);
         }
         
-        // 7. Hang Up / Reset
-        function hangUp() {
-            const localVideo = document.getElementById('localVideo');
-            const remoteVideo = document.getElementById('remoteVideo');
-            const startCallButton = document.getElementById('startCallButton');
-            const hangUpButton = document.getElementById('hangUpButton');
-            const videoStatus = document.getElementById('videoStatus');
-
-
+        async function hangUp() {
             if (pc) {
                 pc.close();
                 pc = null;
             }
             if (localStream) {
                 localStream.getTracks().forEach(track => track.stop());
+                localStream = null;
                 if (localVideo) localVideo.srcObject = null;
             }
             if (remoteVideo) remoteVideo.srcObject = null;
             
-            // Clear Firebase signaling path to enable new calls
-            // IMPORTANT: Setting to null clears all offer/answer/ice data for a fresh start.
-            callRef.set(null); 
+            // Clear Firestore signaling path to enable new calls for everyone
+            try {
+                // Set status to hung_up to notify the other peer immediately
+                await setDoc(doc(db, CALL_DOC_PATH), { status: 'hung_up', sender: userId, timestamp: serverTimestamp() }); 
+                
+                // Also clear candidates subcollection for cleanliness
+                const candidatesSnapshot = await getDocs(collection(db, CANDIDATES_COLLECTION_PATH));
+                // Using Promise.all to delete documents efficiently
+                await Promise.all(candidatesSnapshot.docs.map(d => deleteDoc(d.ref)));
+
+            } catch(e) {
+                console.warn("Could not clear signaling document. Manual clear may be needed for full reset.", e);
+            }
 
             if(startCallButton) startCallButton.disabled = false;
             if(hangUpButton) hangUpButton.disabled = true;
@@ -542,37 +557,100 @@
         // --- MODE SWITCHING ---
 
         function setMode(mode) {
-            const chatModeDiv = document.getElementById('chat-mode');
-            const videoModeDiv = document.getElementById('video-mode');
-            const chatModeButton = document.getElementById('chatModeButton');
-            const videoModeButton = document.getElementById('videoModeButton');
-
             if (mode === 'chat') {
                 if(chatModeDiv) chatModeDiv.style.display = 'block';
                 if(videoModeDiv) videoModeDiv.style.display = 'none';
                 if(chatModeButton) chatModeButton.classList.add('active');
                 if(videoModeButton) videoModeButton.classList.remove('active');
-                hangUp(); // Ensure call is terminated when switching back to chat
+                // Ensure media and call is terminated when leaving video mode
+                if(localStream || pc) hangUp(); 
             } else if (mode === 'video') {
                 if(chatModeDiv) chatModeDiv.style.display = 'none';
                 if(videoModeDiv) videoModeDiv.style.display = 'block';
                 if(chatModeButton) chatModeButton.classList.remove('active');
                 if(videoModeButton) videoModeButton.classList.add('active');
                 
-                // Initiate stream when entering video mode, but don't force a call
+                // Initiate stream and listeners when entering video mode
                 startLocalStream();
                 initVideoListeners();
             }
         }
-        
-        const chatModeButton = document.getElementById('chatModeButton');
-        const videoModeButton = document.getElementById('videoModeButton');
-        
-        if(chatModeButton) chatModeButton.addEventListener('click', () => setMode('chat'));
-        if(videoModeButton) videoModeButton.addEventListener('click', () => setMode('video'));
-        
-        // Set default mode
-        setMode('chat'); 
+
+        // --- MAIN INITIALIZATION ---
+
+        function initializeAppAndAuth() {
+            // 1. Get DOM references
+            chatArea = document.getElementById('chatArea');
+            chatInput = document.getElementById('chatInput');
+            sendButton = document.getElementById('sendButton');
+            localVideo = document.getElementById('localVideo');
+            remoteVideo = document.getElementById('remoteVideo');
+            startCallButton = document.getElementById('startCallButton');
+            hangUpButton = document.getElementById('hangUpButton');
+            videoStatus = document.getElementById('videoStatus');
+            statusMessage = document.getElementById('statusMessage');
+            chatModeDiv = document.getElementById('chat-mode');
+            videoModeDiv = document.getElementById('video-mode');
+            chatModeButton = document.getElementById('chatModeButton');
+            videoModeButton = document.getElementById('videoModeButton');
+
+            // Set initial button state
+            if(sendButton) sendButton.disabled = true;
+            if(startCallButton) startCallButton.disabled = true;
+
+            // 2. Setup Firebase
+            try {
+                setLogLevel('debug'); // Enable debug logging
+                const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                
+                statusMessage.textContent = "Authenticating...";
+
+                // 3. Handle Authentication
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        isAuthReady = true;
+                        statusMessage.textContent = `Connected as: ${userId.substring(0, 8)}... (Full ID: ${userId})`;
+                        
+                        // Initialize features only after authentication is complete
+                        initChatListeners();
+                        // Note: Video listeners are initialized when switching to video mode in setMode()
+
+                    } else {
+                        // Sign in if no user is found
+                        try {
+                            const authPromise = typeof __initial_auth_token !== 'undefined' && __initial_auth_token
+                                ? signInWithCustomToken(auth, __initial_auth_token)
+                                : signInAnonymously(auth);
+                            
+                            await authPromise;
+                            // onAuthStateChanged will trigger again with the user object
+
+                        } catch (error) {
+                            console.error("Authentication failed:", error);
+                            statusMessage.textContent = 'ERROR: Authentication failed. Cannot connect.';
+                        }
+                    }
+                });
+
+            } catch (error) {
+                console.error("Firebase Initialization Error:", error);
+                statusMessage.textContent = 'ERROR: Initialization failed. Check console.';
+            }
+
+            // 4. Setup Mode Switching
+            if(chatModeButton) chatModeButton.addEventListener('click', () => setMode('chat'));
+            if(videoModeButton) videoModeButton.addEventListener('click', () => setMode('video'));
+            
+            // Set default mode
+            setMode('chat');
+        }
+
+        // Wait for the entire DOM to be loaded before accessing elements
+        window.onload = initializeAppAndAuth;
 
     </script>
 </body>
