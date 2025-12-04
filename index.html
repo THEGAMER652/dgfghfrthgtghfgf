@@ -219,9 +219,11 @@
 
     <!-- Firebase Imports and Logic -->
     <script type="module">
+        // Importera nödvändiga Firebase-funktioner från CDN
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, addDoc, setDoc, onSnapshot, collection, query, where, orderBy, serverTimestamp, setLogLevel, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        // getAnalytics finns inte i denna CDN-version och behövs inte för appens funktionalitet.
 
         // --- GLOBAL STATE & DOM REFERENCES ---
         let db;
@@ -242,14 +244,45 @@
             ]
         };
 
-        // Paths using the mandatory global __app_id
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        // --- FIREBASE KONFIGURATION ---
+        
+        // Din manuellt inlagda Firebase-konfiguration.
+        // Denna används ENDAST om appen körs UTANFÖR Canvas-miljön (där __firebase_config saknas).
+        const externalFirebaseConfig = {
+            apiKey: "AIzaSyBxaoBS9ckZ99mJWG1Y3gT5Aa5uwzSUQZI",
+            authDomain: "fakeomege.firebaseapp.com",
+            projectId: "fakeomege",
+            storageBucket: "fakeomege.firebasestorage.app",
+            messagingSenderId: "931074805838",
+            appId: "1:931074805838:web:280a80c0a2f5e175a5f31f",
+            measurementId: "G-0VYEG2BEH3"
+        };
+        
+        function getFirebaseSetup() {
+            // Kontrollerar om vi kör i Canvas-miljön (där variablerna finns)
+            if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+                // Scenario 1: Kör i Canvas. Använd den automatiska konfigurationen.
+                return {
+                    config: JSON.parse(__firebase_config),
+                    appId: typeof __app_id !== 'undefined' ? __app_id : 'default-canvas-app-id',
+                    token: typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null
+                };
+            } else {
+                // Scenario 2: Kör på extern webbplats. Använd den manuellt inlagda konfigurationen.
+                const manualAppId = externalFirebaseConfig.projectId || 'external-app-id';
+                return {
+                    config: externalFirebaseConfig,
+                    appId: manualAppId,
+                    token: null // Använder signInAnonymously om du kör externt
+                };
+            }
+        }
+        
+        const { config: firebaseConfig, appId, token: initialAuthToken } = getFirebaseSetup();
+
+        // Paths using the determined appId
         const CHAT_COLLECTION_PATH = `/artifacts/${appId}/public/data/messages`;
-        
-        // The single document used for call Offer/Answer signaling. All users listen to this.
         const CALL_DOC_PATH = `/artifacts/${appId}/public/data/calls/global`; 
-        
-        // Subcollection for exchanging ICE candidates.
         const CANDIDATES_COLLECTION_PATH = `${CALL_DOC_PATH}/candidates`; 
 
         // --- CHAT FUNCTIONS ---
@@ -258,8 +291,8 @@
             if (!chatArea) return;
 
             const isSelf = user === userId;
-            // Use a substring of the userId for display, as requested by the instructions
-            const userName = isSelf ? 'You' : `User (${user})`; 
+            // VISA HELA ANVÄNDAR-ID:t
+            const userName = isSelf ? 'You' : `User ID: ${user}`; 
             const msgBox = document.createElement('div');
             
             let msgClass = 'user';
@@ -314,7 +347,20 @@
             const q = query(collection(db, CHAT_COLLECTION_PATH) /* No ordering to avoid indexing errors */); 
             
             onSnapshot(q, (snapshot) => {
-                snapshot.docChanges().forEach((change) => {
+                // Sort messages locally by timestamp before displaying
+                const sortedChanges = snapshot.docChanges().sort((a, b) => {
+                    const timeA = a.doc.data().timestamp?.toMillis() || 0;
+                    const timeB = b.doc.data().timestamp?.toMillis() || 0;
+                    return timeA - timeB;
+                });
+
+                // Clear chat area before repopulating to ensure correct order after local sorting
+                // WARNING: This clears the whole chat history on every new message! 
+                // A better approach for real-time is to process 'added' events only and maintain state, 
+                // but for simplicity with local sorting, we append only new items and trust the initial load.
+                // Let's stick to appending only 'added' changes for efficiency and rely on initial load order.
+                
+                sortedChanges.forEach((change) => {
                     if (change.type === "added") {
                         const data = change.doc.data();
                         addMessage(data.user, data.msg, data.timestamp);
@@ -426,7 +472,7 @@
                 initializePeerConnection();
             }
             
-            if (videoStatus) videoStatus.textContent = `Incoming call from ${offerData.sender.substring(0, 8)}... Answering...`;
+            if (videoStatus) videoStatus.textContent = `Incoming call from ${offerData.sender}... Answering...`;
             
             try {
                 // Set the remote description (the offer)
@@ -600,8 +646,14 @@
 
             // 2. Setup Firebase
             try {
+                if (!firebaseConfig || !firebaseConfig.projectId) {
+                    statusMessage.textContent = 'ERROR: No Firebase configuration found. Please check setup.';
+                    console.error('Firebase Initialization Error: firebaseConfig is missing or empty.');
+                    return;
+                }
+
                 setLogLevel('debug'); // Enable debug logging
-                const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+                
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
@@ -613,7 +665,8 @@
                     if (user) {
                         userId = user.uid;
                         isAuthReady = true;
-                        statusMessage.textContent = `Connected as: ${userId.substring(0, 8)}... (Full ID: ${userId})`;
+                        // Visa hela användar-ID:t
+                        statusMessage.textContent = `Connected as: ${userId}`; 
                         
                         // Initialize features only after authentication is complete
                         initChatListeners();
@@ -622,8 +675,8 @@
                     } else {
                         // Sign in if no user is found
                         try {
-                            const authPromise = typeof __initial_auth_token !== 'undefined' && __initial_auth_token
-                                ? signInWithCustomToken(auth, __initial_auth_token)
+                            const authPromise = initialAuthToken 
+                                ? signInWithCustomToken(auth, initialAuthToken)
                                 : signInAnonymously(auth);
                             
                             await authPromise;
@@ -638,7 +691,7 @@
 
             } catch (error) {
                 console.error("Firebase Initialization Error:", error);
-                statusMessage.textContent = 'ERROR: Initialization failed. Check console.';
+                statusMessage.textContent = `ERROR: Initialization failed. ${error.message}`;
             }
 
             // 4. Setup Mode Switching
