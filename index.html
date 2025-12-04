@@ -8,7 +8,7 @@
     <!-- Using custom CSS for aesthetics, replacing Tailwind for this game-like UI -->
     <style>
         /* Base styling */
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        @import url('https://fonts.google.com/specimen/Inter?query=Inter');
         body {
             font-family: 'Inter', sans-serif;
             background-color: #F7FFDC;
@@ -223,7 +223,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, addDoc, setDoc, onSnapshot, collection, query, where, orderBy, serverTimestamp, setLogLevel, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        // getAnalytics finns inte i denna CDN-version och behövs inte för appens funktionalitet.
+        // getAnalytics, som du nämnde, är inte inkluderad i denna minimala CDN-uppsättning och behövs inte för chatt/videosamtalsfunktionaliteten.
 
         // --- GLOBAL STATE & DOM REFERENCES ---
         let db;
@@ -246,16 +246,16 @@
 
         // --- FIREBASE KONFIGURATION ---
         
-        // Din manuellt inlagda Firebase-konfiguration.
+        // Din nya manuellt inlagda Firebase-konfiguration.
         // Denna används ENDAST om appen körs UTANFÖR Canvas-miljön (där __firebase_config saknas).
         const externalFirebaseConfig = {
-            apiKey: "AIzaSyBxaoBS9ckZ99mJWG1Y3gT5Aa5uwzSUQZI",
-            authDomain: "fakeomege.firebaseapp.com",
-            projectId: "fakeomege",
-            storageBucket: "fakeomege.firebasestorage.app",
-            messagingSenderId: "931074805838",
-            appId: "1:931074805838:web:280a80c0a2f5e175a5f31f",
-            measurementId: "G-0VYEG2BEH3"
+            apiKey: "AIzaSyC5J-Q67J095aVMfevb-M1Oml4pcIIDxcY",
+            authDomain: "videocalllll.firebaseapp.com",
+            projectId: "videocalllll",
+            storageBucket: "videocalllll.firebasestorage.app",
+            messagingSenderId: "755637457460",
+            appId: "1:755637457460:web:df557cb627cb3d79c2b061",
+            measurementId: "G-4RN8SB47QL"
         };
         
         function getFirebaseSetup() {
@@ -354,12 +354,6 @@
                     return timeA - timeB;
                 });
 
-                // Clear chat area before repopulating to ensure correct order after local sorting
-                // WARNING: This clears the whole chat history on every new message! 
-                // A better approach for real-time is to process 'added' events only and maintain state, 
-                // but for simplicity with local sorting, we append only new items and trust the initial load.
-                // Let's stick to appending only 'added' changes for efficiency and rely on initial load order.
-                
                 sortedChanges.forEach((change) => {
                     if (change.type === "added") {
                         const data = change.doc.data();
