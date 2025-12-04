@@ -1,17 +1,19 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="sv">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Global Real-Time Chat and Video Call</title>
+    <title>Gemensamt Globalt Chattrum (Firebase)</title>
     
-    <!-- Using custom CSS for aesthetics, replacing Tailwind for this game-like UI -->
+    <!-- Importera Firebase SDK v8 (Realtime Database & App) via CDN -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+
     <style>
-        /* Base styling */
-        @import url('https://fonts.google.com/specimen/Inter?query=Inter');
+        /* Grundläggande styling med fokus på mobilvänlighet */
         body {
-            font-family: 'Inter', sans-serif;
-            background-color: #F7FFDC;
+            font-family: 'Inter', Arial, sans-serif;
+            background-color: #F7FFDC; /* Ljus, mjuk bakgrund */
             display: flex;
             justify-content: center;
             align-items: center;
@@ -19,7 +21,7 @@
             margin: 0;
             padding: 10px;
         }
-        .main-container {
+        .chat-container {
             width: 100%;
             max-width: 600px;
             background-color: #FFFFFF;
@@ -28,38 +30,19 @@
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
             padding: 20px;
         }
-        .header {
+        .chat-header {
             text-align: center;
             padding-bottom: 15px;
-            border-bottom: 3px solid #66BB6A;
+            border-bottom: 3px solid #66BB6A; /* Grön accent */
             margin-bottom: 15px;
         }
-        .header h2 {
+        .chat-header h2 {
             color: #388E3C;
             font-size: 1.8rem;
             margin-top: 0;
         }
-        .mode-selector button {
-            padding: 10px;
-            margin: 0 5px 15px;
-            background-color: #BBBBBB;
-            color: white;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: bold;
-            transition: background-color 0.2s;
-        }
-        .mode-selector .active {
-            background-color: #66BB6A;
-        }
-
-        /* --- Chat Mode Styles --- */
-        #chat-mode {
-            display: block; /* Default view */
-        }
         .chat-area {
-            height: 40vh;
+            height: 40vh; /* Anpassar sig till skärmhöjden */
             max-height: 500px;
             border: 1px solid #E0E0E0;
             padding: 15px;
@@ -73,21 +56,22 @@
             margin-bottom: 10px;
             padding: 8px;
             border-radius: 6px;
-            font-size: 0.9em;
         }
         .message-box span {
             font-weight: 700;
         }
+        /* Färg för meddelanden */
         .system {
-            color: #FF5722;
+            color: #FF5722; /* Orange/System */
             font-style: italic;
             background-color: #FFF3E0;
         }
         .user {
-            color: #1976D2;
+            color: #1976D2; /* Standard användarfärg */
         }
+        /* Din egna meddelanden (förtydligas) */
         .self {
-            color: #388E3C;
+            color: #388E3C; /* Grön för egna meddelanden */
             text-align: right;
             background-color: #E8F5E9;
             margin-left: 20%;
@@ -106,6 +90,11 @@
             padding: 12px;
             border: 2px solid #BBBBBB;
             border-radius: 8px;
+            transition: border-color 0.3s;
+        }
+        .input-group input[type="text"]:focus {
+            outline: none;
+            border-color: #66BB6A;
         }
         .input-group button {
             padding: 12px 18px;
@@ -115,590 +104,139 @@
             border-radius: 8px;
             cursor: pointer;
             font-weight: bold;
-            transition: background-color 0.2s;
+            transition: background-color 0.3s, transform 0.1s;
         }
-        .input-group button:hover:not(:disabled) {
+        .input-group button:hover {
             background-color: #4CAF50;
         }
-        
-        /* --- Video Mode Styles --- */
-        #video-mode {
-            display: none;
-        }
-        .video-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            margin-bottom: 15px;
-        }
-        .video-container {
-            border: 2px solid #388E3C;
-            border-radius: 8px;
-            overflow: hidden;
-            background-color: #000;
-        }
-        #localVideo, #remoteVideo {
-            width: 100%;
-            height: auto;
-            display: block;
-            aspect-ratio: 4 / 3;
-            background-color: #111;
-        }
-        .video-controls {
-            display: flex;
-            gap: 10px;
-        }
-        .video-controls button {
-            flex: 1;
-            padding: 12px;
-            background-color: #D32F2F;
-            color: white;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: bold;
-            transition: background-color 0.2s;
-        }
-        .video-controls button:hover:not(:disabled) {
-            background-color: #C62828;
-        }
-        .video-controls #startCallButton {
-             background-color: #1976D2;
-        }
-        .video-controls #startCallButton:hover:not(:disabled) {
-            background-color: #1565C0;
-        }
-        .video-controls button:disabled {
-            background-color: #90CAF9;
-            cursor: not-allowed;
+        .input-group button:active {
+            transform: scale(0.98);
         }
     </style>
 </head>
 <body>
 
-    <div class="main-container">
-        <div class="header">
-            <h2>📢 Global Communications</h2>
-            <p id="statusMessage">Initializing Application...</p>
+    <div class="chat-container">
+        <div class="chat-header">
+            <h2>📢 Globalt Chattrum</h2>
+            <p id="status-message">Ansluter till databasen...</p>
         </div>
 
-        <div class="mode-selector">
-            <button id="chatModeButton" class="active">Text Chat</button>
-            <button id="videoModeButton">Video/Audio Call</button>
+        <div class="chat-area" id="chatArea">
+            <!-- Chattmeddelanden visas här -->
         </div>
 
-        <!-- --- TEXT CHAT INTERFACE (Mode 1) --- -->
-        <div id="chat-mode">
-            <div class="chat-area" id="chatArea">
-                <!-- Chat messages will appear here -->
-            </div>
-            <div class="input-group">
-                <input type="text" id="chatInput" placeholder="Type your message here..." autocomplete="off">
-                <button id="sendButton">Send</button>
-            </div>
+        <div class="input-group">
+            <input type="text" id="chatInput" placeholder="Skriv ditt meddelande här..." autocomplete="off">
+            <button id="sendButton">Skicka</button>
         </div>
-
-        <!-- --- VIDEO CALL INTERFACE (Mode 2) --- -->
-        <div id="video-mode">
-            <div class="video-grid">
-                <div class="video-container">
-                    <video id="localVideo" autoplay muted playsinline></video>
-                </div>
-                <div class="video-container">
-                    <video id="remoteVideo" autoplay playsinline></video>
-                </div>
-            </div>
-            <div class="video-controls">
-                <button id="startCallButton">Start Video Call</button>
-                <button id="hangUpButton" disabled>Hang Up</button>
-            </div>
-            <p id="videoStatus" style="text-align: center; font-style: italic; color: #555;">Initializing WebRTC...</p>
-        </div>
-
     </div>
 
-    <!-- Firebase Imports and Logic -->
-    <script type="module">
-        // Importera nödvändiga Firebase-funktioner från CDN
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, addDoc, setDoc, onSnapshot, collection, query, where, orderBy, serverTimestamp, setLogLevel, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        // getAnalytics, som du nämnde, är inte inkluderad i denna minimala CDN-uppsättning och behövs inte för chatt/videosamtalsfunktionaliteten.
-
-        // --- GLOBAL STATE & DOM REFERENCES ---
-        let db;
-        let auth;
-        let userId = 'unknown';
-        let isAuthReady = false;
-        
-        // DOM Elements
-        let chatArea, chatInput, sendButton, localVideo, remoteVideo, startCallButton, hangUpButton, videoStatus, statusMessage;
-        let chatModeDiv, videoModeDiv, chatModeButton, videoModeButton;
-
-        // WebRTC Globals
-        let pc; // PeerConnection
-        let localStream;
-        const configuration = {
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-            ]
-        };
-
-        // --- FIREBASE KONFIGURATION ---
-        
-        // Din nya manuellt inlagda Firebase-konfiguration.
-        // Denna används ENDAST om appen körs UTANFÖR Canvas-miljön (där __firebase_config saknas).
-        const externalFirebaseConfig = {
-            apiKey: "AIzaSyC5J-Q67J095aVMfevb-M1Oml4pcIIDxcY",
-            authDomain: "videocalllll.firebaseapp.com",
-            projectId: "videocalllll",
-            storageBucket: "videocalllll.firebasestorage.app",
-            messagingSenderId: "755637457460",
-            appId: "1:755637457460:web:df557cb627cb3d79c2b061",
-            measurementId: "G-4RN8SB47QL"
+    <script>
+        // Din Firebase-konfiguration (omvandlad till standard JS-objekt för CDN-versionen)
+        const firebaseConfig = {
+          apiKey: "AIzaSyBxaoBS9ckZ99mJWG1Y3gT5Aa5uwzSUQZI",
+          authDomain: "fakeomege.firebaseapp.com",
+          projectId: "fakeomege",
+          storageBucket: "fakeomege.firebasestorage.app",
+          messagingSenderId: "931074805838",
+          appId: "1:931074805838:web:280a80c0a2f5e175a5f31f"
         };
         
-        function getFirebaseSetup() {
-            // Kontrollerar om vi kör i Canvas-miljön (där variablerna finns)
-            if (typeof __firebase_config !== 'undefined' && __firebase_config) {
-                // Scenario 1: Kör i Canvas. Använd den automatiska konfigurationen.
-                return {
-                    config: JSON.parse(__firebase_config),
-                    appId: typeof __app_id !== 'undefined' ? __app_id : 'default-canvas-app-id',
-                    token: typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null
-                };
-            } else {
-                // Scenario 2: Kör på extern webbplats. Använd den manuellt inlagda konfigurationen.
-                const manualAppId = externalFirebaseConfig.projectId || 'external-app-id';
-                return {
-                    config: externalFirebaseConfig,
-                    appId: manualAppId,
-                    token: null // Använder signInAnonymously om du kör externt
-                };
+        // Initialisera Firebase
+        // Vi använder firebase.initializeApp() eftersom vi använder CDN-script-taggar
+        try {
+            firebase.initializeApp(firebaseConfig);
+            const database = firebase.database();
+            const chatRef = database.ref('globalChat/messages'); 
+            
+            // Generera ett unikt användarnamn och spara det i localStorage
+            const generateUsername = () => 'Anonym_' + Math.random().toString(36).substr(2, 4).toUpperCase();
+            let currentUsername = localStorage.getItem('chatUsername');
+
+            if (!currentUsername) {
+                currentUsername = generateUsername();
+                localStorage.setItem('chatUsername', currentUsername);
             }
-        }
-        
-        const { config: firebaseConfig, appId, token: initialAuthToken } = getFirebaseSetup();
-
-        // Paths using the determined appId
-        const CHAT_COLLECTION_PATH = `/artifacts/${appId}/public/data/messages`;
-        const CALL_DOC_PATH = `/artifacts/${appId}/public/data/calls/global`; 
-        const CANDIDATES_COLLECTION_PATH = `${CALL_DOC_PATH}/candidates`; 
-
-        // --- CHAT FUNCTIONS ---
-
-        function addMessage(user, msg, msgTimestamp) {
-            if (!chatArea) return;
-
-            const isSelf = user === userId;
-            // VISA HELA ANVÄNDAR-ID:t
-            const userName = isSelf ? 'You' : `User ID: ${user}`; 
-            const msgBox = document.createElement('div');
             
-            let msgClass = 'user';
-            if (user === 'System') msgClass = 'system';
-            else if (isSelf) msgClass = 'self';
-
-            msgBox.className = 'message-box ' + msgClass;
+            // DOM-element
+            const chatArea = document.getElementById('chatArea');
+            const chatInput = document.getElementById('chatInput');
+            const sendButton = document.getElementById('sendButton');
+            const statusMessage = document.getElementById('status-message');
             
-            const senderSpan = document.createElement('span');
-            senderSpan.textContent = userName + ': ';
+            statusMessage.textContent = `Ansluten som: ${currentUsername}`;
 
-            const timestamp = msgTimestamp?.toDate ? msgTimestamp.toDate() : new Date();
-            const timeText = timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            // Funktion för att lägga till meddelande i chatten
+            function addMessage(user, msg, className) {
+                const msgBox = document.createElement('div');
+                
+                // Bestäm om det är ditt eget meddelande
+                if (user === currentUsername) {
+                    msgBox.className = 'message-box self';
+                } else {
+                    msgBox.className = 'message-box ' + className;
+                }
 
-            msgBox.appendChild(senderSpan);
-            msgBox.appendChild(document.createTextNode(msg));
-            
-            const timeElement = document.createElement('small');
-            timeElement.textContent = ' ' + timeText;
-            timeElement.style.opacity = 0.6;
-            msgBox.appendChild(timeElement);
+                const senderSpan = document.createElement('span');
+                senderSpan.className = className;
+                senderSpan.textContent = user + ': ';
 
-            chatArea.appendChild(msgBox);
-            // Scroll to bottom
-            chatArea.scrollTop = chatArea.scrollHeight;
-        }
+                msgBox.appendChild(senderSpan);
+                msgBox.appendChild(document.createTextNode(msg));
 
-        async function sendMessage() {
-            if (!chatInput || !chatInput.value.trim() || !userId) return;
-
-            const message = chatInput.value.trim();
-            chatInput.value = '';
-            sendButton.disabled = true;
-
-            try {
-                await addDoc(collection(db, CHAT_COLLECTION_PATH), {
-                    user: userId,
-                    msg: message,
-                    timestamp: serverTimestamp()
-                });
-            } catch (e) {
-                console.error("Error sending message:", e);
-            } finally {
-                sendButton.disabled = false;
+                chatArea.appendChild(msgBox);
+                // Scrolla till botten
+                chatArea.scrollTop = chatArea.scrollHeight;
             }
-        }
-        
-        function initChatListeners() {
-            if (!db || !isAuthReady) return;
 
-            // Query the chat collection. Note: sorting is done in memory to avoid Firestore index requirements.
-            const q = query(collection(db, CHAT_COLLECTION_PATH) /* No ordering to avoid indexing errors */); 
-            
-            onSnapshot(q, (snapshot) => {
-                // Sort messages locally by timestamp before displaying
-                const sortedChanges = snapshot.docChanges().sort((a, b) => {
-                    const timeA = a.doc.data().timestamp?.toMillis() || 0;
-                    const timeB = b.doc.data().timestamp?.toMillis() || 0;
-                    return timeA - timeB;
-                });
+            // Lyssna på nya meddelanden i realtid från Firebase
+            chatRef.limitToLast(50).on('child_added', (snapshot) => {
+                const data = snapshot.val();
+                
+                // Bestäm CSS-klass: system, eller vanlig användare
+                let msgClass = 'user';
+                if (data.user === 'System') {
+                    msgClass = 'system';
+                }
 
-                sortedChanges.forEach((change) => {
-                    if (change.type === "added") {
-                        const data = change.doc.data();
-                        addMessage(data.user, data.msg, data.timestamp);
-                    }
-                });
-            }, (error) => {
-                console.error("Error listening to chat messages:", error);
+                // Lägg till meddelandet i gränssnittet
+                addMessage(data.user, data.msg, msgClass);
             });
-            
-            // Chat Event Listeners
+
+            // Funktion för att skicka meddelandet till Firebase
+            function sendMessage() {
+                const message = chatInput.value.trim();
+                if (message) {
+                    // Skicka objektet till Firebase Realtime Database
+                    chatRef.push({
+                        user: currentUsername,
+                        msg: message,
+                        timestamp: firebase.database.ServerValue.TIMESTAMP
+                    });
+                    
+                    chatInput.value = ''; 
+                    chatInput.focus();
+                }
+            }
+
+            // Event Listeners
             sendButton.addEventListener('click', sendMessage);
+
             chatInput.addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') {
                     sendMessage();
                 }
             });
-            sendButton.disabled = false;
-            addMessage('System', `Welcome, ${userId}! Start chatting or join a video call.`, new Date());
-        }
 
+            // Systemmeddelande vid start
+            addMessage('System', `Välkommen, ${currentUsername}! Chatta med andra användare globalt.`, 'system');
 
-        // --- WEBRTC / VIDEO CALL FUNCTIONS ---
-        
-        async function startLocalStream() {
-            if (!localVideo || !videoStatus || !startCallButton) return false;
-
-            try {
-                localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-                localVideo.srcObject = localStream;
-                videoStatus.textContent = "Local camera/mic started. Ready to call or receive.";
-                startCallButton.disabled = false;
-                return true;
-            } catch (error) {
-                videoStatus.textContent = `ERROR: Could not access media devices. (${error.name}). Try refreshing or check permissions.`;
-                console.error("Error accessing media devices:", error);
-                startCallButton.disabled = true;
-                return false;
-            }
+        } catch (error) {
+            console.error("Firebase Initialization Error:", error);
+            document.getElementById('status-message').textContent = 'FEL: Kunde inte ansluta till Firebase. Kontrollera din konsol för detaljer.';
         }
         
-        function initializePeerConnection() {
-            if (!remoteVideo || !localStream) return;
-            pc = new RTCPeerConnection(configuration);
-
-            localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-
-            pc.ontrack = (event) => {
-                remoteVideo.srcObject = event.streams[0];
-            };
-
-            // Gather ICE candidates and send them to the other peer via Firestore
-            pc.onicecandidate = (event) => {
-                if (event.candidate) {
-                    addDoc(collection(db, CANDIDATES_COLLECTION_PATH), {
-                        sender: userId,
-                        candidate: event.candidate.toJSON()
-                    }).catch(e => console.error("Error sending ICE candidate:", e));
-                }
-            };
-        }
-        
-        async function createOffer() {
-            if (!localStream) {
-                // Try to start local media first
-                if (!await startLocalStream()) return;
-            }
-            if (pc) {
-                // If PC exists, user might be trying to re-call. Hang up first to clean state.
-                hangUp(); 
-            }
-            initializePeerConnection();
-            
-            videoStatus.textContent = "Creating call offer...";
-            try {
-                const offer = await pc.createOffer();
-                await pc.setLocalDescription(offer);
-
-                // Send offer to Firestore signaling document
-                await setDoc(doc(db, CALL_DOC_PATH), {
-                    sender: userId,
-                    sdp: offer.sdp,
-                    type: offer.type,
-                    status: 'offered',
-                    timestamp: serverTimestamp()
-                });
-                
-                startCallButton.disabled = true;
-                hangUpButton.disabled = false;
-                videoStatus.textContent = "Offer sent. Waiting for answer...";
-
-            } catch (e) {
-                console.error("Error creating offer:", e);
-                videoStatus.textContent = "Error creating call offer.";
-                hangUp();
-            }
-        }
-
-        async function handleOffer(offerData) {
-            // Do not process your own offer
-            if (offerData.sender === userId) return;
-            
-            // Ensure media access is granted for the receiver
-            if (!localStream) {
-                await startLocalStream();
-            }
-            
-            // Initialize PC if it doesn't exist (i.e., this user is the receiver)
-            if (!pc) {
-                initializePeerConnection();
-            }
-            
-            if (videoStatus) videoStatus.textContent = `Incoming call from ${offerData.sender}... Answering...`;
-            
-            try {
-                // Set the remote description (the offer)
-                await pc.setRemoteDescription(new RTCSessionDescription(offerData));
-                
-                // Create the answer
-                const answer = await pc.createAnswer();
-                await pc.setLocalDescription(answer);
-
-                // Send answer back via Firestore (overwriting the doc)
-                await setDoc(doc(db, CALL_DOC_PATH), {
-                    sender: userId,
-                    sdp: answer.sdp,
-                    type: answer.type,
-                    status: 'answered',
-                    timestamp: serverTimestamp()
-                });
-                
-                startCallButton.disabled = true;
-                hangUpButton.disabled = false;
-                videoStatus.textContent = "Answer sent. Connecting...";
-
-            } catch (e) {
-                console.error("Error handling offer:", e);
-                videoStatus.textContent = "Error processing call offer. Call cancelled.";
-                hangUp();
-            }
-        }
-        
-        async function handleAnswer(answerData) {
-            // Only the offerer should process the answer
-            if (answerData.sender === userId || !pc || pc.localDescription.type !== 'offer') return;
-
-            videoStatus.textContent = "Received answer. Finalizing connection...";
-            try {
-                await pc.setRemoteDescription(new RTCSessionDescription(answerData));
-                videoStatus.textContent = "Call connected! 🎉";
-            } catch (e) {
-                console.error("Error handling answer:", e);
-                videoStatus.textContent = "Error connecting call.";
-            }
-        }
-        
-        function initVideoListeners() {
-            if (!db || !isAuthReady) return;
-
-            // 1. Listen for Offer/Answer signaling state changes on the global call document
-            onSnapshot(doc(db, CALL_DOC_PATH), (docSnapshot) => {
-                if (!docSnapshot.exists()) return;
-                const data = docSnapshot.data();
-                
-                // Handle call hung up by any user
-                if (data.status === 'hung_up' && data.sender !== userId && pc) {
-                    console.log("Remote party hung up.");
-                    hangUp();
-                    return;
-                }
-                
-                if (!data || data.sender === userId) return; // Ignore self-generated updates
-
-                if (data.type === 'offer' && data.status === 'offered') {
-                    // This user is the receiver
-                    handleOffer(data);
-                } else if (data.type === 'answer' && data.status === 'answered' && pc && pc.localDescription && pc.localDescription.type === 'offer') {
-                    // This user is the initiator and receives the answer
-                    handleAnswer(data);
-                }
-            }, (error) => {
-                console.error("Error listening to call signaling:", error);
-            });
-
-            // 2. Listen for ICE Candidates exchanged via the subcollection
-            const q = query(collection(db, CANDIDATES_COLLECTION_PATH));
-            onSnapshot(q, (snapshot) => {
-                snapshot.docChanges().forEach((change) => {
-                    if (change.type === "added") {
-                        const data = change.doc.data();
-                        // Only process candidates from the remote peer if PC is active
-                        if (data.sender !== userId && pc && pc.remoteDescription) {
-                            try {
-                                pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-                            } catch (e) {
-                                console.error("Error adding ICE candidate:", e);
-                            }
-                        }
-                    }
-                });
-            }, (error) => {
-                console.error("Error listening to ICE candidates:", error);
-            });
-            
-            // UI Event Listeners
-            startCallButton.addEventListener('click', createOffer);
-            hangUpButton.addEventListener('click', hangUp);
-        }
-        
-        async function hangUp() {
-            if (pc) {
-                pc.close();
-                pc = null;
-            }
-            if (localStream) {
-                localStream.getTracks().forEach(track => track.stop());
-                localStream = null;
-                if (localVideo) localVideo.srcObject = null;
-            }
-            if (remoteVideo) remoteVideo.srcObject = null;
-            
-            // Clear Firestore signaling path to enable new calls for everyone
-            try {
-                // Set status to hung_up to notify the other peer immediately
-                await setDoc(doc(db, CALL_DOC_PATH), { status: 'hung_up', sender: userId, timestamp: serverTimestamp() }); 
-                
-                // Also clear candidates subcollection for cleanliness
-                const candidatesSnapshot = await getDocs(collection(db, CANDIDATES_COLLECTION_PATH));
-                // Using Promise.all to delete documents efficiently
-                await Promise.all(candidatesSnapshot.docs.map(d => deleteDoc(d.ref)));
-
-            } catch(e) {
-                console.warn("Could not clear signaling document. Manual clear may be needed for full reset.", e);
-            }
-
-            if(startCallButton) startCallButton.disabled = false;
-            if(hangUpButton) hangUpButton.disabled = true;
-            if (videoStatus) videoStatus.textContent = "Call ended. Ready for new call.";
-        }
-        
-        // --- MODE SWITCHING ---
-
-        function setMode(mode) {
-            if (mode === 'chat') {
-                if(chatModeDiv) chatModeDiv.style.display = 'block';
-                if(videoModeDiv) videoModeDiv.style.display = 'none';
-                if(chatModeButton) chatModeButton.classList.add('active');
-                if(videoModeButton) videoModeButton.classList.remove('active');
-                // Ensure media and call is terminated when leaving video mode
-                if(localStream || pc) hangUp(); 
-            } else if (mode === 'video') {
-                if(chatModeDiv) chatModeDiv.style.display = 'none';
-                if(videoModeDiv) videoModeDiv.style.display = 'block';
-                if(chatModeButton) chatModeButton.classList.remove('active');
-                if(videoModeButton) videoModeButton.classList.add('active');
-                
-                // Initiate stream and listeners when entering video mode
-                startLocalStream();
-                initVideoListeners();
-            }
-        }
-
-        // --- MAIN INITIALIZATION ---
-
-        function initializeAppAndAuth() {
-            // 1. Get DOM references
-            chatArea = document.getElementById('chatArea');
-            chatInput = document.getElementById('chatInput');
-            sendButton = document.getElementById('sendButton');
-            localVideo = document.getElementById('localVideo');
-            remoteVideo = document.getElementById('remoteVideo');
-            startCallButton = document.getElementById('startCallButton');
-            hangUpButton = document.getElementById('hangUpButton');
-            videoStatus = document.getElementById('videoStatus');
-            statusMessage = document.getElementById('statusMessage');
-            chatModeDiv = document.getElementById('chat-mode');
-            videoModeDiv = document.getElementById('video-mode');
-            chatModeButton = document.getElementById('chatModeButton');
-            videoModeButton = document.getElementById('videoModeButton');
-
-            // Set initial button state
-            if(sendButton) sendButton.disabled = true;
-            if(startCallButton) startCallButton.disabled = true;
-
-            // 2. Setup Firebase
-            try {
-                if (!firebaseConfig || !firebaseConfig.projectId) {
-                    statusMessage.textContent = 'ERROR: No Firebase configuration found. Please check setup.';
-                    console.error('Firebase Initialization Error: firebaseConfig is missing or empty.');
-                    return;
-                }
-
-                setLogLevel('debug'); // Enable debug logging
-                
-                const app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
-                
-                statusMessage.textContent = "Authenticating...";
-
-                // 3. Handle Authentication
-                onAuthStateChanged(auth, async (user) => {
-                    if (user) {
-                        userId = user.uid;
-                        isAuthReady = true;
-                        // Visa hela användar-ID:t
-                        statusMessage.textContent = `Connected as: ${userId}`; 
-                        
-                        // Initialize features only after authentication is complete
-                        initChatListeners();
-                        // Note: Video listeners are initialized when switching to video mode in setMode()
-
-                    } else {
-                        // Sign in if no user is found
-                        try {
-                            const authPromise = initialAuthToken 
-                                ? signInWithCustomToken(auth, initialAuthToken)
-                                : signInAnonymously(auth);
-                            
-                            await authPromise;
-                            // onAuthStateChanged will trigger again with the user object
-
-                        } catch (error) {
-                            console.error("Authentication failed:", error);
-                            statusMessage.textContent = 'ERROR: Authentication failed. Cannot connect.';
-                        }
-                    }
-                });
-
-            } catch (error) {
-                console.error("Firebase Initialization Error:", error);
-                statusMessage.textContent = `ERROR: Initialization failed. ${error.message}`;
-            }
-
-            // 4. Setup Mode Switching
-            if(chatModeButton) chatModeButton.addEventListener('click', () => setMode('chat'));
-            if(videoModeButton) videoModeButton.addEventListener('click', () => setMode('video'));
-            
-            // Set default mode
-            setMode('chat');
-        }
-
-        // Wait for the entire DOM to be loaded before accessing elements
-        window.onload = initializeAppAndAuth;
-
     </script>
 </body>
 </html>
