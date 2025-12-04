@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemensamt Globalt Chattrum (Firebase)</title>
+    
+    <!-- Importera Firebase SDK v8 (Realtime Database & App) via CDN -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+
+    <style>
+        /* Grundläggande styling med fokus på mobilvänlighet */
+        body {
+            font-family: 'Inter', Arial, sans-serif;
+            background-color: #F7FFDC; /* Ljus, mjuk bakgrund */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 10px;
+        }
+        .chat-container {
+            width: 100%;
+            max-width: 600px;
+            background-color: #FFFFFF;
+            border: 1px solid #CCCCCC;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+        }
+        .chat-header {
+            text-align: center;
+            padding-bottom: 15px;
+            border-bottom: 3px solid #66BB6A; /* Grön accent */
+            margin-bottom: 15px;
+        }
+        .chat-header h2 {
+            color: #388E3C;
+            font-size: 1.8rem;
+            margin-top: 0;
+        }
+        .chat-area {
+            height: 40vh; /* Anpassar sig till skärmhöjden */
+            max-height: 500px;
+            border: 1px solid #E0E0E0;
+            padding: 15px;
+            overflow-y: auto;
+            margin-bottom: 15px;
+            background-color: #FAFAFA;
+            border-radius: 8px;
+            scroll-behavior: smooth;
+        }
+        .message-box {
+            margin-bottom: 10px;
+            padding: 8px;
+            border-radius: 6px;
+        }
+        .message-box span {
+            font-weight: 700;
+        }
+        /* Färg för meddelanden */
+        .system {
+            color: #FF5722; /* Orange/System */
+            font-style: italic;
+            background-color: #FFF3E0;
+        }
+        .user {
+            color: #1976D2; /* Standard användarfärg */
+        }
+        /* Din egna meddelanden (förtydligas) */
+        .self {
+            color: #388E3C; /* Grön för egna meddelanden */
+            text-align: right;
+            background-color: #E8F5E9;
+            margin-left: 20%;
+        }
+        .self span {
+            display: block;
+            font-weight: 700;
+            text-align: left;
+        }
+        .input-group {
+            display: flex;
+            gap: 10px;
+        }
+        .input-group input[type="text"] {
+            flex-grow: 1;
+            padding: 12px;
+            border: 2px solid #BBBBBB;
+            border-radius: 8px;
+            transition: border-color 0.3s;
+        }
+        .input-group input[type="text"]:focus {
+            outline: none;
+            border-color: #66BB6A;
+        }
+        .input-group button {
+            padding: 12px 18px;
+            background-color: #66BB6A;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background-color 0.3s, transform 0.1s;
+        }
+        .input-group button:hover {
+            background-color: #4CAF50;
+        }
+        .input-group button:active {
+            transform: scale(0.98);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="chat-container">
+        <div class="chat-header">
+            <h2>📢 Globalt Chattrum</h2>
+            <p id="status-message">Ansluter till databasen...</p>
+        </div>
+
+        <div class="chat-area" id="chatArea">
+            <!-- Chattmeddelanden visas här -->
+        </div>
+
+        <div class="input-group">
+            <input type="text" id="chatInput" placeholder="Skriv ditt meddelande här..." autocomplete="off">
+            <button id="sendButton">Skicka</button>
+        </div>
+    </div>
+
+    <script>
+        // Din Firebase-konfiguration (omvandlad till standard JS-objekt för CDN-versionen)
+        const firebaseConfig = {
+          apiKey: "AIzaSyBxaoBS9ckZ99mJWG1Y3gT5Aa5uwzSUQZI",
+          authDomain: "fakeomege.firebaseapp.com",
+          projectId: "fakeomege",
+          storageBucket: "fakeomege.firebasestorage.app",
+          messagingSenderId: "931074805838",
+          appId: "1:931074805838:web:280a80c0a2f5e175a5f31f"
+        };
+        
+        // Initialisera Firebase
+        // Vi använder firebase.initializeApp() eftersom vi använder CDN-script-taggar
+        try {
+            firebase.initializeApp(firebaseConfig);
+            const database = firebase.database();
+            const chatRef = database.ref('globalChat/messages'); 
+            
+            // Generera ett unikt användarnamn och spara det i localStorage
+            const generateUsername = () => 'Anonym_' + Math.random().toString(36).substr(2, 4).toUpperCase();
+            let currentUsername = localStorage.getItem('chatUsername');
+
+            if (!currentUsername) {
+                currentUsername = generateUsername();
+                localStorage.setItem('chatUsername', currentUsername);
+            }
+            
+            // DOM-element
+            const chatArea = document.getElementById('chatArea');
+            const chatInput = document.getElementById('chatInput');
+            const sendButton = document.getElementById('sendButton');
+            const statusMessage = document.getElementById('status-message');
+            
+            statusMessage.textContent = `Ansluten som: ${currentUsername}`;
+
+            // Funktion för att lägga till meddelande i chatten
+            function addMessage(user, msg, className) {
+                const msgBox = document.createElement('div');
+                
+                // Bestäm om det är ditt eget meddelande
+                if (user === currentUsername) {
+                    msgBox.className = 'message-box self';
+                } else {
+                    msgBox.className = 'message-box ' + className;
+                }
+
+                const senderSpan = document.createElement('span');
+                senderSpan.className = className;
+                senderSpan.textContent = user + ': ';
+
+                msgBox.appendChild(senderSpan);
+                msgBox.appendChild(document.createTextNode(msg));
+
+                chatArea.appendChild(msgBox);
+                // Scrolla till botten
+                chatArea.scrollTop = chatArea.scrollHeight;
+            }
+
+            // Lyssna på nya meddelanden i realtid från Firebase
+            chatRef.limitToLast(50).on('child_added', (snapshot) => {
+                const data = snapshot.val();
+                
+                // Bestäm CSS-klass: system, eller vanlig användare
+                let msgClass = 'user';
+                if (data.user === 'System') {
+                    msgClass = 'system';
+                }
+
+                // Lägg till meddelandet i gränssnittet
+                addMessage(data.user, data.msg, msgClass);
+            });
+
+            // Funktion för att skicka meddelandet till Firebase
+            function sendMessage() {
+                const message = chatInput.value.trim();
+                if (message) {
+                    // Skicka objektet till Firebase Realtime Database
+                    chatRef.push({
+                        user: currentUsername,
+                        msg: message,
+                        timestamp: firebase.database.ServerValue.TIMESTAMP
+                    });
+                    
+                    chatInput.value = ''; 
+                    chatInput.focus();
+                }
+            }
+
+            // Event Listeners
+            sendButton.addEventListener('click', sendMessage);
+
+            chatInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+
+            // Systemmeddelande vid start
+            addMessage('System', `Välkommen, ${currentUsername}! Chatta med andra användare globalt.`, 'system');
+
+        } catch (error) {
+            console.error("Firebase Initialization Error:", error);
+            document.getElementById('status-message').textContent = 'FEL: Kunde inte ansluta till Firebase. Kontrollera din konsol för detaljer.';
+        }
+        
+    </script>
+</body>
+</html>
